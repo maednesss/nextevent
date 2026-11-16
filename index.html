@@ -49,9 +49,6 @@
     }
 
     .countdown {
-      --reveal-x: 50%;
-      --reveal-y: 50%;
-      --reveal-size: 0px;
       position: absolute;
       z-index: 0;
       top: 50%;
@@ -64,16 +61,6 @@
       text-align: center;
       pointer-events: none;
       opacity: 0;
-      -webkit-mask-image: radial-gradient(
-        circle var(--reveal-size) at var(--reveal-x) var(--reveal-y),
-        #fff 0%, #fff 54%, transparent 100%
-      );
-      mask-image: radial-gradient(
-        circle var(--reveal-size) at var(--reveal-x) var(--reveal-y),
-        #fff 0%, #fff 54%, transparent 100%
-      );
-      -webkit-mask-repeat: no-repeat;
-      mask-repeat: no-repeat;
       transition: opacity .18s ease;
     }
 
@@ -348,21 +335,8 @@
         return false;
       }
 
-      function setCountdownReveal(x, y, visible) {
-        if (!visible) {
-          countdownNode.classList.remove("is-revealed");
-          countdownNode.style.setProperty("--reveal-size", "0px");
-          return;
-        }
-
-        const rect = countdownNode.getBoundingClientRect();
-        countdownNode.style.setProperty("--reveal-x", `${x - rect.left}px`);
-        countdownNode.style.setProperty("--reveal-y", `${y - rect.top}px`);
-        countdownNode.style.setProperty(
-          "--reveal-size",
-          `${Math.min(154, Math.max(108, window.innerWidth * .34))}px`
-        );
-        countdownNode.classList.add("is-revealed");
+      function setCountdownReveal(visible) {
+        countdownNode.classList.toggle("is-revealed", visible);
       }
 
       function render() {
@@ -456,7 +430,7 @@
         pointer.active = overLogo && (
           event.pointerType === "mouse" || pointer.pressed
         );
-        setCountdownReveal(pointer.x, pointer.y, pointer.active);
+        setCountdownReveal(pointer.active);
       }
 
       canvas.addEventListener("pointerdown", (event) => {
@@ -472,19 +446,19 @@
         pointer.pressed = false;
         pointer.active = event.pointerType === "mouse" &&
           pointIsOnLogo(event.clientX, event.clientY);
-        setCountdownReveal(event.clientX, event.clientY, pointer.active);
+        setCountdownReveal(pointer.active);
       });
 
       canvas.addEventListener("pointercancel", () => {
         pointer.pressed = false;
         pointer.active = false;
-        setCountdownReveal(0, 0, false);
+        setCountdownReveal(false);
       });
 
       canvas.addEventListener("pointerleave", (event) => {
         if (event.pointerType === "mouse") {
           pointer.active = false;
-          setCountdownReveal(0, 0, false);
+          setCountdownReveal(false);
         }
       });
 
