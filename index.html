@@ -49,6 +49,9 @@
     }
 
     .countdown {
+      --reveal-x: 50%;
+      --reveal-y: 50%;
+      --reveal-size: 0px;
       position: absolute;
       z-index: 0;
       top: 50%;
@@ -60,6 +63,22 @@
       transform: translate(-50%, -50%);
       text-align: center;
       pointer-events: none;
+      opacity: 0;
+      -webkit-mask-image: radial-gradient(
+        circle var(--reveal-size) at var(--reveal-x) var(--reveal-y),
+        #fff 0%, #fff 54%, transparent 100%
+      );
+      mask-image: radial-gradient(
+        circle var(--reveal-size) at var(--reveal-x) var(--reveal-y),
+        #fff 0%, #fff 54%, transparent 100%
+      );
+      -webkit-mask-repeat: no-repeat;
+      mask-repeat: no-repeat;
+      transition: opacity .18s ease;
+    }
+
+    .countdown.is-revealed {
+      opacity: 1;
     }
 
     .unit {
@@ -135,6 +154,7 @@
       const LOGO_URL = "./maedness-logo.png";
       const canvas = document.querySelector(".logo-particles");
       const ctx = canvas.getContext("2d", { alpha: true });
+      const countdownNode = document.querySelector(".countdown");
       const daysNode = document.querySelector("[data-days]");
       const hoursNode = document.querySelector("[data-hours]");
       const minutesNode = document.querySelector("[data-minutes]");
@@ -143,6 +163,7 @@
       const pointer = { x: -1000, y: -1000, active: false, pressed: false };
 
       let particles = [];
+      let backgroundParticles = [];
       let frameId = 0;
       let canvasWidth = 0;
       let canvasHeight = 0;
@@ -150,6 +171,7 @@
       let particleStep = 4;
       let imageData = null;
       let bounds = null;
+      let logoPlacement = null;
 
       function updateCountdown() {
         const remaining = Math.max(0, EVENT_DATE - Date.now());
@@ -206,6 +228,7 @@
         canvas.width = Math.round(canvasWidth * dpr);
         canvas.height = Math.round(canvasHeight * dpr);
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        createBackgroundParticles();
 
         if (imageData && bounds) createParticles();
       }
@@ -225,6 +248,7 @@
         const drawHeight = logoHeight * scale;
         const offsetX = (canvasWidth - drawWidth) / 2;
         const offsetY = (canvasHeight - drawHeight) / 2;
+        logoPlacement = { x: offsetX, y: offsetY, width: drawWidth, height: drawHeight };
         particleStep = window.innerWidth < 500 ? 4.15 : 3.8;
 
         // Il passo minimo limita il numero di particelle sui display grandi.
@@ -256,6 +280,8 @@
               originY: py,
               vx: 0,
               vy: 0,
+              phase: Math.random() * Math.PI * 2,
+              drift: .35 + Math.random() * .75,
               angle,
               char: digits[Math.floor(Math.random() * digits.length)],
               color: red ? "#ff2635" : "#f7f5f5"
@@ -264,19 +290,133 @@
         }
       }
 
+      function createBackgroundParticles() {
+        const area = canvasWidth * canvasHeight;
+        const count = Math.min(180, Math.max(72, Math.round(area / 6800)));
+        const digits = "0123456789";
+
+        backgroundParticles = Array.from({ length: count }, () => ({
+          x: Math.random() * canvasWidth,
+          y: Math.random() * canvasHeight,
+          originX: 0,
+          originY: 0,
+          vx: 0,
+          vy: 0,
+          phase: Math.random() * Math.PI * 2,
+          speed: .00025 + Math.random() * .00045,
+          drift: 2 + Math.random() * 8,
+          size: 5 + Math.random() * 4,
+          alpha: .09 + Math.random() * .11,
+          char: digits[Math.floor(Math.random() * digits.length)],
+          color: Math.random() < .26 ? "#ff2635" : "#c7c4c4"
+        }));
+
+        for (const particle of backgroundParticles) {
+          particle.originX = particle.x;
+          particle.originY = particle.y;
+        }
+      }
+
+      function pointIsOnLogo(x, y) {
+        if (!imageData || !bounds || !logoPlacement) return false;
+
+        const { x: left, y: top, width, height } = logoPlacement;
+        if (x < left || x > left + width || y < top || y > top + height) return false;
+
+        const sourceX = bounds.x + (x - left) / scale;
+        const sourceY = bounds.y + (y - top) / scale;
+        const tolerance = Math.max(2, 8 / scale);
+        const source = imageData.data;
+        const sourceWidth = imageData.width;
+
+        for (let dy = -tolerance; dy <= tolerance; dy += 3) {
+          for (let dx = -tolerance; dx <= tolerance; dx += 3) {
+            const sx = Math.round(sourceX + dx);
+            const sy = Math.round(sourceY + dy);
+            if (
+              sx < 0 || sy < 0 ||
+              sx >= sourceWidth || sy >= imageData.height
+            ) continue;
+
+            const index = (sy * sourceWidth + sx) * 4;
+            if (isLogoPixel(source[index], source[index + 1], source[index + 2])) {
+              return true;
+            }
+          }
+        }
+
+        return false;
+      }
+
+      function setCountdownReveal(x, y, visible) {
+        if (!visible) {
+          countdownNode.classList.remove("is-revealed");
+          countdownNode.style.setProperty("--reveal-size", "0px");
+          return;
+        }
+
+        const rect = countdownNode.getBoundingClientRect();
+        countdownNode.style.setProperty("--reveal-x", `${x - rect.left}px`);
+        countdownNode.style.setProperty("--reveal-y", `${y - rect.top}px`);
+        countdownNode.style.setProperty(
+          "--reveal-size",
+          `${Math.min(154, Math.max(108, window.innerWidth * .34))}px`
+        );
+        countdownNode.classList.add("is-revealed");
+      }
+
       function render() {
         ctx.clearRect(0, 0, canvasWidth, canvasHeight);
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
-        ctx.font = `700 ${particleStep * 1.08}px "Courier New", monospace`;
-
-        const radius = Math.min(132, Math.max(88, window.innerWidth * .29));
+        const now = performance.now();
+        const radius = Math.min(145, Math.max(92, window.innerWidth * .3));
         const radiusSquared = radius * radius;
 
+        // Numeri appena visibili sul fondo, con una deriva lenta e indipendente.
+        for (const particle of backgroundParticles) {
+          const targetX = particle.originX +
+            Math.sin(now * particle.speed + particle.phase) * particle.drift;
+          const targetY = particle.originY +
+            Math.cos(now * particle.speed * .83 + particle.phase) * particle.drift;
+
+          particle.vx += (targetX - particle.x) * .018;
+          particle.vy += (targetY - particle.y) * .018;
+
+          if (pointer.active) {
+            const dx = particle.x - pointer.x;
+            const dy = particle.y - pointer.y;
+            const distanceSquared = dx * dx + dy * dy;
+            if (distanceSquared < radiusSquared) {
+              const distance = Math.sqrt(distanceSquared) || 1;
+              const push = (1 - distance / radius) * .9;
+              particle.vx += dx / distance * push;
+              particle.vy += dy / distance * push;
+            }
+          }
+
+          particle.vx *= .92;
+          particle.vy *= .92;
+          particle.x += particle.vx;
+          particle.y += particle.vy;
+
+          ctx.globalAlpha = particle.alpha;
+          ctx.fillStyle = particle.color;
+          ctx.font = `700 ${particle.size}px "Courier New", monospace`;
+          ctx.fillText(particle.char, particle.x, particle.y);
+        }
+
+        ctx.globalAlpha = 1;
+        ctx.font = `700 ${particleStep * 1.08}px "Courier New", monospace`;
+
+        // I numeri del logo respirano leggermente e restano sopra al countdown.
         for (const particle of particles) {
-          const spring = .045;
-          particle.vx += (particle.originX - particle.x) * spring;
-          particle.vy += (particle.originY - particle.y) * spring;
+          const targetX = particle.originX +
+            Math.sin(now * .0012 + particle.phase) * particle.drift;
+          const targetY = particle.originY +
+            Math.cos(now * .00105 + particle.phase) * particle.drift;
+          particle.vx += (targetX - particle.x) * .028;
+          particle.vy += (targetY - particle.y) * .028;
 
           if (pointer.active) {
             const dx = particle.x - pointer.x;
@@ -285,7 +425,7 @@
 
             if (distanceSquared < radiusSquared) {
               const distance = Math.sqrt(distanceSquared) || 1;
-              const push = (1 - distance / radius) * 3.2;
+              const push = (1 - distance / radius) * 2.8;
               const nx = distance === 1 && distanceSquared === 0
                 ? Math.cos(particle.angle)
                 : dx / distance;
@@ -297,8 +437,8 @@
             }
           }
 
-          particle.vx *= .84;
-          particle.vy *= .84;
+          particle.vx *= .88;
+          particle.vy *= .88;
           particle.x += particle.vx;
           particle.y += particle.vy;
 
@@ -312,13 +452,16 @@
       function setPointer(event) {
         pointer.x = event.clientX;
         pointer.y = event.clientY;
-        if (event.pointerType === "mouse") pointer.active = true;
-        else pointer.active = pointer.pressed;
+        const overLogo = pointIsOnLogo(pointer.x, pointer.y);
+        pointer.active = overLogo && (
+          event.pointerType === "mouse" || pointer.pressed
+        );
+        setCountdownReveal(pointer.x, pointer.y, pointer.active);
       }
 
       canvas.addEventListener("pointerdown", (event) => {
-        pointer.pressed = true;
-        pointer.active = true;
+        pointer.pressed = event.pointerType !== "mouse" &&
+          pointIsOnLogo(event.clientX, event.clientY);
         setPointer(event);
         if (canvas.setPointerCapture) canvas.setPointerCapture(event.pointerId);
       });
@@ -327,16 +470,22 @@
 
       canvas.addEventListener("pointerup", (event) => {
         pointer.pressed = false;
-        pointer.active = event.pointerType === "mouse";
+        pointer.active = event.pointerType === "mouse" &&
+          pointIsOnLogo(event.clientX, event.clientY);
+        setCountdownReveal(event.clientX, event.clientY, pointer.active);
       });
 
       canvas.addEventListener("pointercancel", () => {
         pointer.pressed = false;
         pointer.active = false;
+        setCountdownReveal(0, 0, false);
       });
 
       canvas.addEventListener("pointerleave", (event) => {
-        if (event.pointerType === "mouse") pointer.active = false;
+        if (event.pointerType === "mouse") {
+          pointer.active = false;
+          setCountdownReveal(0, 0, false);
+        }
       });
 
       updateCountdown();
@@ -357,6 +506,7 @@
 
       logo.src = LOGO_URL;
       window.addEventListener("resize", resizeCanvas, { passive: true });
+      resizeCanvas();
     })();
   </script>
 </body>
