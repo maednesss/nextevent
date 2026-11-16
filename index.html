@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#050505">
+  <title>MÆDNESS — Next Event</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --black: #050505;
+      --white: #f7f5f5;
+      --red: #ff1725;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: var(--black);
+    }
+
+    body {
+      color: var(--white);
+      font-family: Arial, Helvetica, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      overscroll-behavior: none;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    .stage {
+      position: relative;
+      display: grid;
+      width: 100%;
+      height: 100%;
+      height: 100svh;
+      min-height: 100%;
+      place-items: center;
+      overflow: hidden;
+      background: var(--black);
+      isolation: isolate;
+    }
+
+    .countdown {
+      position: absolute;
+      z-index: 0;
+      top: 50%;
+      left: 50%;
+      display: grid;
+      width: min(96vw, 780px);
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: clamp(2px, 2.1vw, 18px);
+      transform: translate(-50%, -50%);
+      text-align: center;
+      pointer-events: none;
+    }
+
+    .unit {
+      display: grid;
+      justify-items: center;
+      gap: clamp(4px, 1.5vw, 10px);
+      min-width: 0;
+    }
+
+    .value {
+      color: var(--red);
+      font-family: "Arial Black", Arial, sans-serif;
+      font-size: clamp(30px, 9.5vw, 76px);
+      font-weight: 900;
+      font-variant-numeric: tabular-nums;
+      line-height: .9;
+      letter-spacing: -.055em;
+      text-shadow: 0 0 24px rgba(255, 23, 37, .2);
+    }
+
+    .label {
+      color: rgba(255, 255, 255, .78);
+      font-family: "Courier New", monospace;
+      font-size: clamp(8px, 2.2vw, 12px);
+      font-weight: 700;
+      letter-spacing: .14em;
+      line-height: 1;
+    }
+
+    .logo-particles {
+      position: absolute;
+      z-index: 1;
+      inset: 0;
+      display: block;
+      width: 100%;
+      height: 100%;
+      touch-action: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    @media (max-width: 360px) {
+      .countdown {
+        width: 98vw;
+        gap: 0;
+      }
+
+      .label {
+        letter-spacing: .08em;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .value {
+        text-shadow: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="stage" aria-label="Countdown MÆDNESS">
+    <div class="countdown" role="timer" aria-label="Tempo al prossimo evento">
+      <div class="unit"><span class="value" data-days>00</span><span class="label">DAYS</span></div>
+      <div class="unit"><span class="value" data-hours>00</span><span class="label">HOURS</span></div>
+      <div class="unit"><span class="value" data-minutes>00</span><span class="label">MIN</span></div>
+      <div class="unit"><span class="value" data-seconds>00</span><span class="label">SEC</span></div>
+    </div>
+    <canvas class="logo-particles" aria-hidden="true"></canvas>
+  </main>
+
+  <script>
+    (() => {
+      const EVENT_DATE = new Date("2026-12-18T23:30:00+01:00").getTime();
+      const LOGO_URL = "./maedness-logo.png";
+      const canvas = document.querySelector(".logo-particles");
+      const ctx = canvas.getContext("2d", { alpha: true });
+      const daysNode = document.querySelector("[data-days]");
+      const hoursNode = document.querySelector("[data-hours]");
+      const minutesNode = document.querySelector("[data-minutes]");
+      const secondsNode = document.querySelector("[data-seconds]");
+      const logo = new Image();
+      const pointer = { x: -1000, y: -1000, active: false, pressed: false };
+
+      let particles = [];
+      let frameId = 0;
+      let canvasWidth = 0;
+      let canvasHeight = 0;
+      let scale = 1;
+      let particleStep = 4;
+      let imageData = null;
+      let bounds = null;
+
+      function updateCountdown() {
+        const remaining = Math.max(0, EVENT_DATE - Date.now());
+        const totalSeconds = Math.floor(remaining / 1000);
+        const days = Math.floor(totalSeconds / 86400);
+        const hours = Math.floor((totalSeconds % 86400) / 3600);
+        const minutes = Math.floor((totalSeconds % 3600) / 60);
+        const seconds = totalSeconds % 60;
+
+        daysNode.textContent = String(days).padStart(2, "0");
+        hoursNode.textContent = String(hours).padStart(2, "0");
+        minutesNode.textContent = String(minutes).padStart(2, "0");
+        secondsNode.textContent = String(seconds).padStart(2, "0");
+      }
+
+      function isLogoPixel(r, g, b) {
+        const isRed = r > 55 && r > g * 1.35 && r > b * 1.35;
+        const isWhite = r > 105 && g > 105 && b > 105;
+        return isRed || isWhite;
+      }
+
+      function findLogoBounds(data, width, height) {
+        let minX = width;
+        let minY = height;
+        let maxX = -1;
+        let maxY = -1;
+
+        for (let y = 0; y < height; y++) {
+          for (let x = 0; x < width; x++) {
+            const index = (y * width + x) * 4;
+            if (!isLogoPixel(data[index], data[index + 1], data[index + 2])) continue;
+            if (x < minX) minX = x;
+            if (y < minY) minY = y;
+            if (x > maxX) maxX = x;
+            if (y > maxY) maxY = y;
+          }
+        }
+
+        if (maxX < minX || maxY < minY) return null;
+
+        const margin = 5;
+        return {
+          x: Math.max(0, minX - margin),
+          y: Math.max(0, minY - margin),
+          right: Math.min(width - 1, maxX + margin),
+          bottom: Math.min(height - 1, maxY + margin)
+        };
+      }
+
+      function resizeCanvas() {
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        canvasWidth = window.innerWidth;
+        canvasHeight = window.innerHeight;
+        canvas.width = Math.round(canvasWidth * dpr);
+        canvas.height = Math.round(canvasHeight * dpr);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+        if (imageData && bounds) createParticles();
+      }
+
+      function createParticles() {
+        particles = [];
+
+        const logoWidth = bounds.right - bounds.x + 1;
+        const logoHeight = bounds.bottom - bounds.y + 1;
+        const maxLogoWidth = Math.min(
+          window.innerWidth * .92,
+          window.innerHeight * .72,
+          720
+        );
+        const drawWidth = maxLogoWidth;
+        scale = drawWidth / logoWidth;
+        const drawHeight = logoHeight * scale;
+        const offsetX = (canvasWidth - drawWidth) / 2;
+        const offsetY = (canvasHeight - drawHeight) / 2;
+        particleStep = window.innerWidth < 500 ? 4.15 : 3.8;
+
+        // Il passo minimo limita il numero di particelle sui display grandi.
+        const sourceStep = Math.max(particleStep / scale, 3.2);
+        const source = imageData.data;
+        const sourceWidth = imageData.width;
+        const digits = "0123456789";
+
+        for (let y = bounds.y + sourceStep / 2; y <= bounds.bottom; y += sourceStep) {
+          for (let x = bounds.x + sourceStep / 2; x <= bounds.right; x += sourceStep) {
+            const sx = Math.floor(x);
+            const sy = Math.floor(y);
+            const index = (sy * sourceWidth + sx) * 4;
+            const r = source[index];
+            const g = source[index + 1];
+            const b = source[index + 2];
+
+            if (!isLogoPixel(r, g, b)) continue;
+
+            const red = r > g * 1.35 && r > b * 1.35;
+            const px = offsetX + (x - bounds.x) * scale;
+            const py = offsetY + (y - bounds.y) * scale;
+            const angle = Math.random() * Math.PI * 2;
+
+            particles.push({
+              x: px,
+              y: py,
+              originX: px,
+              originY: py,
+              vx: 0,
+              vy: 0,
+              angle,
+              char: digits[Math.floor(Math.random() * digits.length)],
+              color: red ? "#ff2635" : "#f7f5f5"
+            });
+          }
+        }
+      }
+
+      function render() {
+        ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.font = `700 ${particleStep * 1.08}px "Courier New", monospace`;
+
+        const radius = Math.min(132, Math.max(88, window.innerWidth * .29));
+        const radiusSquared = radius * radius;
+
+        for (const particle of particles) {
+          const spring = .045;
+          particle.vx += (particle.originX - particle.x) * spring;
+          particle.vy += (particle.originY - particle.y) * spring;
+
+          if (pointer.active) {
+            const dx = particle.x - pointer.x;
+            const dy = particle.y - pointer.y;
+            const distanceSquared = dx * dx + dy * dy;
+
+            if (distanceSquared < radiusSquared) {
+              const distance = Math.sqrt(distanceSquared) || 1;
+              const push = (1 - distance / radius) * 3.2;
+              const nx = distance === 1 && distanceSquared === 0
+                ? Math.cos(particle.angle)
+                : dx / distance;
+              const ny = distance === 1 && distanceSquared === 0
+                ? Math.sin(particle.angle)
+                : dy / distance;
+              particle.vx += nx * push;
+              particle.vy += ny * push;
+            }
+          }
+
+          particle.vx *= .84;
+          particle.vy *= .84;
+          particle.x += particle.vx;
+          particle.y += particle.vy;
+
+          ctx.fillStyle = particle.color;
+          ctx.fillText(particle.char, particle.x, particle.y);
+        }
+
+        frameId = window.requestAnimationFrame(render);
+      }
+
+      function setPointer(event) {
+        pointer.x = event.clientX;
+        pointer.y = event.clientY;
+        if (event.pointerType === "mouse") pointer.active = true;
+        else pointer.active = pointer.pressed;
+      }
+
+      canvas.addEventListener("pointerdown", (event) => {
+        pointer.pressed = true;
+        pointer.active = true;
+        setPointer(event);
+        if (canvas.setPointerCapture) canvas.setPointerCapture(event.pointerId);
+      });
+
+      canvas.addEventListener("pointermove", setPointer, { passive: true });
+
+      canvas.addEventListener("pointerup", (event) => {
+        pointer.pressed = false;
+        pointer.active = event.pointerType === "mouse";
+      });
+
+      canvas.addEventListener("pointercancel", () => {
+        pointer.pressed = false;
+        pointer.active = false;
+      });
+
+      canvas.addEventListener("pointerleave", (event) => {
+        if (event.pointerType === "mouse") pointer.active = false;
+      });
+
+      updateCountdown();
+      window.setInterval(updateCountdown, 1000);
+
+      logo.onload = () => {
+        const sampleCanvas = document.createElement("canvas");
+        sampleCanvas.width = 1000;
+        sampleCanvas.height = Math.round(1000 * logo.naturalHeight / logo.naturalWidth);
+        const sampleContext = sampleCanvas.getContext("2d", { willReadFrequently: true });
+        sampleContext.drawImage(logo, 0, 0, sampleCanvas.width, sampleCanvas.height);
+        imageData = sampleContext.getImageData(0, 0, sampleCanvas.width, sampleCanvas.height);
+        bounds = findLogoBounds(imageData.data, sampleCanvas.width, sampleCanvas.height);
+
+        resizeCanvas();
+        if (!frameId) frameId = window.requestAnimationFrame(render);
+      };
+
+      logo.src = LOGO_URL;
+      window.addEventListener("resize", resizeCanvas, { passive: true });
+    })();
+  </script>
+</body>
+</html>
